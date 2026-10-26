@@ -19,18 +19,20 @@ create policy "profiles select" on public.profiles for select using (true);
 create policy "profiles insert own" on public.profiles for insert with check (auth.uid() = id);
 create policy "profiles update own" on public.profiles for update using (auth.uid() = id);
 
--- 注册时自动建 profile(username/display_name 取自 signUp 的 options.data)
+-- 注册时自动建 profile(username/display_name/prefecture/school_started_at 取自 signUp 的 options.data)
 create or replace function public.handle_new_user()
 returns trigger
 language plpgsql
 security definer set search_path = public
 as $$
 begin
-  insert into public.profiles (id, username, display_name)
+  insert into public.profiles (id, username, display_name, prefecture, school_started_at)
   values (
     new.id,
     coalesce(new.raw_user_meta_data->>'username', 'user_' || substr(new.id::text, 1, 8)),
-    coalesce(new.raw_user_meta_data->>'display_name', '')
+    coalesce(new.raw_user_meta_data->>'display_name', ''),
+    coalesce(new.raw_user_meta_data->>'prefecture', '東京'),
+    nullif(new.raw_user_meta_data->>'school_started_at', '')::date
   );
   return new;
 end;
@@ -49,6 +51,7 @@ create table if not exists public.posts (
   caption text not null default '',
   place_name text not null default '',
   sticker_name text not null default '',
+  sticker_emoji text not null default '✦',
   tone text not null default 'lavender',
   likes_count bigint not null default 0,
   created_at timestamptz not null default now()
@@ -147,3 +150,41 @@ create policy "user_stickers select" on public.user_stickers for select using (t
 create policy "user_stickers insert own" on public.user_stickers for insert with check (auth.uid() = user_id);
 -- 说明: Phase 3 上线位置签到/QR 后,这里会改成 verify-geofence 等 edge function 调用
 -- service_role 发放,移除直接 insert 权限。当前仅用于联调。
+
+-- ============ profiles 扩展字段(与 profile_v2.sql 相同;新项目一次到位) ============
+alter table public.profiles add column if not exists prefecture text not null default '東京';
+alter table public.profiles add column if not exists school_started_at date;
+
+-- ============ avatars 存储桶(公开读,只能写自己的目录) ============
+insert into storage.buckets (id, name, public) values ('avatars', 'avatars', true)
+on conflict (id) do nothing;
+
+drop policy if exists "avatars read" on storage.objects;
+create policy "avatars read" on storage.objects for select using (bucket_id = 'avatars');
+
+drop policy if exists "avatars insert own" on storage.objects;
+create policy "avatars insert own" on storage.objects for insert
+  with check (bucket_id = 'avatars' and (storage.foldername(name))[1] = auth.uid()::text);
+
+drop policy if exists "avatars update own" on storage.objects;
+create policy "avatars update own" on storage.objects for update
+  using (bucket_id = 'avatars' and (storage.foldername(name))[1] = auth.uid()::text);
+
+drop policy if exists "avatars delete own" on storage.objects;
+create policy "avatars delete own" on storage.objects for delete
+  using (bucket_id = 'avatars' and (storage.foldername(name))[1] = auth.uid()::text);
+
+-- ============ feed 实时推送 ============
+-- 把 posts 加入 supabase_realtime 发布(新帖实时上墙;RLS 仍然生效)
+do $$
+begin
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'posts'
+  ) then
+    alter publication supabase_realtime add table public.posts;
+  end if;
+end $$;
+
+-- 让 PostgREST 重新加载 schema 缓存
+notify pgrst, 'reload schema';

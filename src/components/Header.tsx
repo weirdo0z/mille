@@ -1,4 +1,5 @@
 import { Bell, Search } from "../icons";
+import { toast } from "../lib/toast";
 import { Logo } from "./Logo";
 
 export function Header({ onSearch }: { onSearch: () => void }) {
@@ -9,7 +10,7 @@ export function Header({ onSearch }: { onSearch: () => void }) {
         <button aria-label="検索" onClick={onSearch}>
           <Search />
         </button>
-        <button aria-label="通知" class="relative">
+        <button aria-label="通知" class="relative" onClick={() => toast("通知はβ版ではご利用いただけません")}>
           <Bell />
           <span class="absolute -right-1 -top-1 size-2 rounded-full bg-[#f47f72]" />
         </button>

@@ -1,5 +1,6 @@
 import { useState } from "preact/hooks";
-import { Bookmark, Heart, MapPin, MessageCircle, Sparkles } from "../icons";
+import { Bookmark, Heart, MapPin, MessageCircle } from "../icons";
+import { toast } from "../lib/toast";
 import type { Post } from "../data";
 
 export function PostCard({
@@ -22,7 +23,11 @@ export function PostCard({
             <p class="text-[10px] text-[#9991a9]">{post.handle}</p>
           </div>
         </div>
-        <button aria-label="投稿メニュー" class="text-xl leading-none text-[#b3aabf]">
+        <button
+          aria-label="投稿メニュー"
+          onClick={() => toast("投稿メニューは準備中です")}
+          class="text-xl leading-none text-[#b3aabf]"
+        >
           •••
         </button>
       </div>
@@ -37,7 +42,7 @@ export function PostCard({
             post.tone === "coral" ? "bg-[#ffb08f] text-[#7c3e36]" : "bg-[#e4dafa] text-[#5a438e]"
           }`}
         >
-          <Sparkles class="mx-auto mb-0.5 size-3" />
+          <span class="mx-auto mb-0.5 block text-base leading-none">{post.stickerEmoji}</span>
           {post.sticker}
         </div>
       </div>
@@ -50,7 +55,11 @@ export function PostCard({
           >
             <Heart class={liked ? "fill-current" : ""} />
           </button>
-          <button aria-label="コメント" class="text-[#6d647d]">
+          <button
+            aria-label="コメント"
+            onClick={() => toast("コメントは準備中です")}
+            class="text-[#6d647d]"
+          >
             <MessageCircle />
           </button>
           <button

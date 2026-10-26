@@ -1,9 +1,13 @@
 import { Plus } from "../icons";
+import { toast } from "../lib/toast";
 import type { Story as StoryData } from "../data";
 
 export function Story({ name, image, active }: StoryData) {
   return (
-    <div class="flex min-w-[66px] flex-col items-center gap-1.5">
+    <div
+      onClick={() => toast("ストーリーは準備中です")}
+      class="flex min-w-[66px] cursor-pointer flex-col items-center gap-1.5"
+    >
       <div
         class={`rounded-full p-[2px] ${
           active

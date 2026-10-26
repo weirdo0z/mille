@@ -1,4 +1,5 @@
 import { Search } from "../icons";
+import { toast } from "../lib/toast";
 import { spots } from "../data";
 
 export function DiscoverPage() {
@@ -6,10 +7,13 @@ export function DiscoverPage() {
     <section class="px-5 pb-28 pt-6">
       <p class="text-[11px] font-bold tracking-[0.18em] text-[#9a83c7]">EXPLORE</p>
       <h1 class="mt-1 font-display text-3xl font-bold">次の体験を探す</h1>
-      <div class="mt-5 flex items-center gap-2 rounded-2xl bg-[#f3edf8] px-4 py-3 text-sm text-[#a49bad]">
+      <button
+        onClick={() => toast("検索は準備中です")}
+        class="mt-5 flex w-full items-center gap-2 rounded-2xl bg-[#f3edf8] px-4 py-3 text-left text-sm text-[#a49bad]"
+      >
         <Search class="size-4" />
         駅名やイベント名で検索
-      </div>
+      </button>
       <div class="mt-7 flex items-center justify-between">
         <h2 class="font-bold">近くで人気のスポット</h2>
         <span class="text-xs text-[#f47f72]">渋谷区</span>
