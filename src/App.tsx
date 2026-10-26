@@ -1,19 +1,22 @@
 import { useEffect, useState } from "preact/hooks";
 import type { Session } from "@supabase/supabase-js";
 import { BottomNav, type Page } from "./components/BottomNav";
+import { CommentModal } from "./components/CommentModal";
 import { ComposeModal, type ComposeData } from "./components/ComposeModal";
 import { Header } from "./components/Header";
+import { NotificationsPanel } from "./components/NotificationsPanel";
 import { Toaster } from "./components/Toaster";
 import { ProfileEditModal, type ProfileEditData } from "./components/ProfileEditModal";
-import { stickers as demoStickers, type StickerView } from "./data";
+import { stickers as demoStickers, type Post, type StickerView } from "./data";
 import { useFeed } from "./hooks/useFeed";
+import { useNotifications } from "./hooks/useNotifications";
 import { type DbProfile, type StickerRow } from "./lib/db";
+import { compressImage } from "./lib/image";
 import { supabase, supabaseConfigured } from "./lib/supabase";
 import { AuthPage } from "./pages/AuthPage";
 import { DiscoverPage } from "./pages/DiscoverPage";
 import { HomePage } from "./pages/HomePage";
 import { MyPage } from "./pages/MyPage";
-import { ProfilePage } from "./pages/ProfilePage";
 
 interface MyPost {
   image: string;
@@ -34,8 +37,13 @@ function App() {
   const [collection, setCollection] = useState<{ collected: number; total: number } | null>(null);
   const [myPosts, setMyPosts] = useState<MyPost[] | null>(null);
   const [myPostCount, setMyPostCount] = useState<number | null>(null);
+  const [followersCount, setFollowersCount] = useState<number | null>(null);
+  const [followingCount, setFollowingCount] = useState<number | null>(null);
+  const [commentPost, setCommentPost] = useState<Post | null>(null);
+  const [notifOpen, setNotifOpen] = useState(false);
 
   const feed = useFeed(session);
+  const notif = useNotifications(session);
 
   // 确保 profiles 行存在(触发器缺失/老账号时补建);返回最终 profile
   async function ensureProfile(s: Session): Promise<DbProfile | null> {
@@ -83,25 +91,34 @@ function App() {
     if (!supabase || !session) return;
     let alive = true;
     (async () => {
-      const [prof, stickerRows, collected, myRows, myCount] = await Promise.all([
-        ensureProfile(session),
-        supabase
-          .from("stickers")
-          .select("id, name, emoji, label, sub, color")
-          .eq("active", true)
-          .order("id"),
-        supabase.from("user_stickers").select("sticker_id").eq("user_id", session.user.id),
-        supabase
-          .from("posts")
-          .select("image_url, caption, sticker_name, sticker_emoji")
-          .eq("user_id", session.user.id)
-          .order("created_at", { ascending: false })
-          .limit(4),
-        supabase
-          .from("posts")
-          .select("id", { count: "exact", head: true })
-          .eq("user_id", session.user.id),
-      ]);
+      const [prof, stickerRows, collected, myRows, myCount, followersQ, followingQ] =
+        await Promise.all([
+          ensureProfile(session),
+          supabase
+            .from("stickers")
+            .select("id, name, emoji, label, sub, color")
+            .eq("active", true)
+            .order("id"),
+          supabase.from("user_stickers").select("sticker_id").eq("user_id", session.user.id),
+          supabase
+            .from("posts")
+            .select("image_url, caption, sticker_name, sticker_emoji")
+            .eq("user_id", session.user.id)
+            .order("created_at", { ascending: false })
+            .limit(4),
+          supabase
+            .from("posts")
+            .select("id", { count: "exact", head: true })
+            .eq("user_id", session.user.id),
+          supabase
+            .from("follows")
+            .select("follower_id", { count: "exact", head: true })
+            .eq("followee_id", session.user.id),
+          supabase
+            .from("follows")
+            .select("followee_id", { count: "exact", head: true })
+            .eq("follower_id", session.user.id),
+        ]);
       if (!alive) return;
       if (prof) setProfile(prof);
       if (stickerRows.data) {
@@ -137,6 +154,8 @@ function App() {
           }))
         );
       if (myCount.count !== null) setMyPostCount(myCount.count);
+      if (followersQ.count !== null) setFollowersCount(followersQ.count);
+      if (followingQ.count !== null) setFollowingCount(followingQ.count);
     })();
     return () => {
       alive = false;
@@ -202,12 +221,14 @@ function App() {
       const prof = await ensureProfile(session);
       if (prof) setProfile(prof);
       if (!prof) return "プロフィールの作成に失敗しました。再ログインしてみてください";
-      // 2) 上传图片
-      const ext = data.image.name.split(".").pop() || "jpg";
+      // 2) 画像圧縮(長辺 1600px / JPEG q0.85;小さい・GIF はそのまま)
+      const blob = await compressImage(data.image);
+      const ext =
+        blob === data.image ? (data.image.name.split(".").pop() || "jpg") : "jpg";
       const path = `${session.user.id}/${Date.now()}.${ext}`;
       const { data: up, error: upErr } = await supabase.storage
         .from("post-images")
-        .upload(path, data.image);
+        .upload(path, blob);
       if (upErr) return `画像アップロードに失敗: ${upErr.message}`;
       const imageUrl = supabase.storage.from("post-images").getPublicUrl(up.path).data.publicUrl;
       // 3) 插入(不带 embed,规避关系解析/schema cache 问题)
@@ -239,6 +260,7 @@ function App() {
       // 4) 本地拼装并上墙(profile 已知,无需回查)
       feed.prependPost({
         id: row.id,
+        userId: session.user.id,
         user: prof.display_name || prof.username,
         handle: `@${prof.username}`,
         avatar: prof.avatar_url || "https://i.pravatar.cc/100?img=5",
@@ -248,6 +270,7 @@ function App() {
         sticker: data.stickerName,
         stickerEmoji: data.stickerEmoji,
         likes: "0",
+        commentsCount: 0,
         tone: data.tone,
       });
       setMyPostCount((prev) => (prev ?? 0) + 1);
@@ -270,6 +293,7 @@ function App() {
     // demo 模式:仅本地追加
     feed.prependPost({
       id: Date.now(),
+      userId: "demo",
       user: profile?.display_name || profile?.username || "mio",
       handle: profile ? `@${profile.username}` : "@mio_days",
       avatar: profile?.avatar_url || "https://i.pravatar.cc/150?img=25",
@@ -279,6 +303,7 @@ function App() {
       sticker: data.stickerName,
       stickerEmoji: data.stickerEmoji,
       likes: "0",
+      commentsCount: 0,
       tone: data.tone,
     });
     return null;
@@ -308,13 +333,26 @@ function App() {
   return (
     <main class="min-h-screen bg-[#f5f0f9] text-[#342c45]">
       <div class="mx-auto min-h-screen max-w-[430px] bg-[#fffaf7] shadow-2xl shadow-[#5f4c78]/10">
-        <Header onSearch={() => setActive("discover")} />
+        <Header
+          onSearch={() => setActive("discover")}
+          onBell={() => {
+            setNotifOpen(true);
+            notif.markAllRead();
+          }}
+          unread={notif.unread}
+        />
         {active === "home" && (
           <HomePage
             posts={feed.posts}
             onExplore={() => setActive("discover")}
             likedIds={feed.likedIds}
+            savedIds={feed.savedIds}
+            followingIds={feed.followingIds}
+            currentUserId={session?.user.id ?? null}
             onToggleLike={feed.toggleLike}
+            onToggleSave={feed.toggleSave}
+            onToggleFollow={feed.toggleFollow}
+            onOpenComments={(post) => setCommentPost(post)}
             loading={feed.loading}
             loadingMore={feed.loadingMore}
             hasMore={feed.hasMore}
@@ -325,23 +363,18 @@ function App() {
           />
         )}
         {active === "discover" && <DiscoverPage />}
-        {active === "profile" && (
-          <ProfilePage
-            profile={profile}
-            stickers={stickerViews}
-            collectedCount={collection?.collected ?? null}
-            totalCount={collection?.total ?? null}
-            onOpenEdit={() => setEditOpen(true)}
-          />
-        )}
         {active === "mypage" && (
           <MyPage
-            onOpenCollection={() => setActive("profile")}
             profile={profile}
             onLogout={logout}
             postCount={myPostCount}
             myPosts={myPosts}
             onOpenEdit={() => setEditOpen(true)}
+            followersCount={followersCount}
+            followingCount={followingCount}
+            stickerViews={stickerViews}
+            collectedCount={collection?.collected ?? null}
+            totalCount={collection?.total ?? null}
           />
         )}
         <BottomNav
@@ -360,6 +393,21 @@ function App() {
             profile={profile}
             onClose={() => setEditOpen(false)}
             onSave={saveProfile}
+          />
+        )}
+        {commentPost && (
+          <CommentModal
+            post={commentPost}
+            currentUser={profile}
+            onClose={() => setCommentPost(null)}
+            onAdded={() => feed.bumpComments(commentPost.id)}
+          />
+        )}
+        {notifOpen && (
+          <NotificationsPanel
+            items={notif.items}
+            loading={notif.loading}
+            onClose={() => setNotifOpen(false)}
           />
         )}
         <Toaster />

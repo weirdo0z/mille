@@ -1,6 +1,6 @@
 # Mille 生产化实施计划 (Production Roadmap)
 
-> 版本: 0.2(2026-10-10 更新:Phase 1 完成,Phase 2/3/4 部分完成)
+> 版本: 0.3(2026-10-10 更新:Phase 2 完成)
 > 前提文档: concept.md(仕様・世界観・ビジネスモデル)
 > 対象コード: 本仓库 mille(Tauri 2 + Preact + TypeScript + Tailwind 4)
 
@@ -104,6 +104,7 @@ SQL 迁移文件(按顺序打补丁;新项目只需跑 `schema.sql`):
 3. `supabase/profile_v3.sql` — 注册触发器写入 prefecture/school_started_at(老项目补丁)
 4. `supabase/post_images.sql` — posts.sticker_emoji 列 + post-images 桶(老项目补丁)
 5. `supabase/realtime.sql` — posts 加入 supabase_realtime 发布(老项目补丁)
+6. `supabase/p2_rest.sql` — P2 残り(保存/コメント/フォロー/通知 + comments_count)(老项目补丁)
 
 ## 4. 阶段计划
 
@@ -114,21 +115,19 @@ SQL 迁移文件(按顺序打补丁;新项目只需跑 `schema.sql`):
 - ✅ 登录 / 注册 / 资料编辑 / 退出;注册即收集资料问题
 - 验收:新账号注册 → 发帖 → 重启 app 后数据仍在 ✅
 
-### Phase 2 — 核心闭环 🔄 进行中
+### Phase 2 — 核心闭环 ✅ 完成(2026-10-10)
 
-已完成:
+- ✅ 发帖:相册选图 / 拍照 + 压缩上传 + 发布
+- ✅ feed 分页 + 下拉刷新 + 无限滚动 + Realtime 新帖 + 错误横幅
+- ✅ 点赞落库(乐观更新 + `toggle_like` RPC)
+- ✅ 评论:`comments` 表 + `add_comment` RPC(原子维护 comments_count)+ 评论弹窗
+- ✅ 关注:`follows` 表;PostCard フォローボタン;マイページのフォロワー/フォロー中を実数表示
+- ✅ 通知:`notifications` 表 + 触发器(follow/like/comment 自动通知)+ 铃铛未读バッジ + 通知面板 + Realtime 即时更新 + 既读化
+- ✅ 收藏落库:`saves` 表 + 乐观更新
+- ✅ 图片上传前压缩(长边 1600px / JPEG q0.85;GIF 原样)
+- 验收:双账号互关、互赞、互评全链路可用(ビジコン demo 成型)
 
-- ✅ 发帖:相册选图 / 拍照 + 上传 + 发布
-- ✅ feed 分页 + 下拉刷新 + 无限滚动 + Realtime 新帖
-- ✅ 点赞落库(乐观更新 + RPC)
-
-剩余:
-
-- ⬜ 评论
-- ⬜ 关注 + 通知
-- ⬜ 收藏落库(当前仅本地状态)
-- ⬜ 图片上传前压缩
-- 验收:双账号互关、互赞、互评全链路可用(此阶段ビジコン demo 即可成型)
+已知限界(后续处理):いいね解除・コメント削除時に通知/计数不回溯;通知重复(连打いいね)未去重
 
 ### Phase 3 — 贴纸系统(核心差异点)🔄 部分完成
 

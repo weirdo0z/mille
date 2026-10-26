@@ -1,14 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from "preact/hooks";
 import type { Session } from "@supabase/supabase-js";
 import { posts as mockPosts, type Post } from "../data";
-import { mapPost, type PostRow, type ProfileLite } from "../lib/db";
+import { mapPost, fetchProfilesMap, type PostRow } from "../lib/db";
 import { supabase, supabaseConfigured } from "../lib/supabase";
+import { toast } from "../lib/toast";
 
-// posts の列一覧(embed なし)。sticker_emoji は後から追加した列なので、
+// posts の列一覧(embed なし)。sticker_emoji / comments_count は後から追加した列なので、
 // 古い DB に無い場合は自動で外して再取得する
 const POST_SELECT =
-  "id, user_id, image_url, caption, place_name, sticker_name, sticker_emoji, tone, likes_count, created_at";
+  "id, user_id, image_url, caption, place_name, sticker_name, sticker_emoji, tone, likes_count, comments_count, created_at";
 const POST_SELECT_FALLBACK = POST_SELECT.replace(", sticker_emoji", "");
+const POST_SELECT_FALLBACK2 = POST_SELECT_FALLBACK.replace(", comments_count", "");
 
 const PAGE_SIZE = 10;
 // feed とは別に「自分の最新投稿」を取得してマージする件数。
@@ -18,6 +20,8 @@ const MY_RECENT = 5;
 export function useFeed(session: Session | null) {
   const [posts, setPosts] = useState<Post[]>(supabaseConfigured ? [] : mockPosts);
   const [likedIds, setLikedIds] = useState<Set<number>>(new Set());
+  const [savedIds, setSavedIds] = useState<Set<number>>(new Set());
+  const [followingIds, setFollowingIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(supabaseConfigured);
   const [loadingMore, setLoadingMore] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -27,13 +31,23 @@ export function useFeed(session: Session | null) {
   // 同一ユーザーのセッション更新(TOKEN_REFRESHED 等)で再読み込みしないためのガード
   const userIdRef = useRef<string | null>(null);
 
-  // posts クエリ共通部(sticker_emoji 列欠落時は自動フォールバック)
+  // posts クエリ共通部(列欠落時は自動フォールバック)
   const execPosts = useCallback(
     async (build: (q: any) => any): Promise<{ rows: PostRow[]; error: string | null }> => {
       const run = async (cols: string) => await build(supabase!.from("posts").select(cols));
-      let { data, error } = await run(POST_SELECT);
-      if (error && /sticker_emoji/i.test(error.message)) {
-        ({ data, error } = await run(POST_SELECT_FALLBACK));
+      const attempts = [POST_SELECT, POST_SELECT_FALLBACK, POST_SELECT_FALLBACK2];
+      let data: PostRow[] | null = null;
+      let error: { message: string } | null = null;
+      for (const cols of attempts) {
+        const res = await run(cols);
+        if (!res.error) {
+          data = res.data;
+          error = null;
+          break;
+        }
+        error = res.error;
+        // 列欠落系エラーのみフォールバックを続行
+        if (!/sticker_emoji|comments_count/i.test(res.error.message)) break;
       }
       if (error) {
         console.error("posts query failed:", error.message);
@@ -44,19 +58,7 @@ export function useFeed(session: Session | null) {
     []
   );
 
-  // user_id 一覧からプロフィールをバッチ取得(client-side join 用)
-  const fetchProfiles = useCallback(async (ids: string[]): Promise<Map<string, ProfileLite>> => {
-    const uniq = [...new Set(ids)];
-    const map = new Map<string, ProfileLite>();
-    if (uniq.length === 0) return map;
-    const { data, error } = await supabase!
-      .from("profiles")
-      .select("id, username, display_name, avatar_url")
-      .in("id", uniq);
-    if (error) console.error("profiles query failed:", error.message);
-    for (const p of ((data ?? []) as ProfileLite[])) map.set(p.id, p);
-    return map;
-  }, []);
+  // user_id 一覧からプロフィールをバッチ取得(client-side join 用)は db.ts の fetchProfilesMap を共用
 
   // 1 ページ取得(id 降順、afterId より古いもの)
   const fetchPage = useCallback(
@@ -80,13 +82,10 @@ export function useFeed(session: Session | null) {
   );
 
   // 行 + プロフィール → Post リスト
-  const toPosts = useCallback(
-    async (rows: PostRow[]): Promise<Post[]> => {
-      const profiles = await fetchProfiles(rows.map((r) => r.user_id));
-      return rows.map((r) => mapPost(r, profiles));
-    },
-    [fetchProfiles]
-  );
+  const toPosts = useCallback(async (rows: PostRow[]): Promise<Post[]> => {
+    const profiles = await fetchProfilesMap(rows.map((r) => r.user_id));
+    return rows.map((r) => mapPost(r, profiles));
+  }, []);
 
   // 全件ロード:
   // 1) feed の先頭ページ + 自分の最新投稿 + 自分のいいね を同時取得
@@ -95,12 +94,14 @@ export function useFeed(session: Session | null) {
     async (uid: string) => {
       setLoading(true);
       setError(null);
-      const [page, mine, likes] = await Promise.all([
+      const [page, mine, likes, saves, follows] = await Promise.all([
         fetchPage(null),
         execPosts((q: any) =>
           q.eq("user_id", uid).order("id", { ascending: false }).limit(MY_RECENT)
         ),
         supabase!.from("likes").select("post_id").eq("user_id", uid),
+        supabase!.from("saves").select("post_id").eq("user_id", uid),
+        supabase!.from("follows").select("followee_id").eq("follower_id", uid),
       ]);
       if (userIdRef.current !== uid) return; // ログアウト・ユーザー切替済みなら破棄
       if (page.error) {
@@ -123,6 +124,12 @@ export function useFeed(session: Session | null) {
       setLoading(false);
       if (likes.data)
         setLikedIds(new Set(((likes.data as { post_id: number }[]).map((r) => r.post_id))));
+      if (saves.data)
+        setSavedIds(new Set(((saves.data as { post_id: number }[]).map((r) => r.post_id))));
+      if (follows.data)
+        setFollowingIds(
+          new Set(((follows.data as { followee_id: string }[]).map((r) => r.followee_id)))
+        );
     },
     [fetchPage, execPosts, toPosts]
   );
@@ -134,6 +141,8 @@ export function useFeed(session: Session | null) {
       userIdRef.current = null;
       setPosts([]);
       setLikedIds(new Set());
+      setSavedIds(new Set());
+      setFollowingIds(new Set());
       setHasMore(false);
       lastIdRef.current = null;
       setLoading(false);
@@ -170,28 +179,111 @@ export function useFeed(session: Session | null) {
     setRefreshing(false);
   }, [session, loadFeed]);
 
+  // いいね/解除:楽観更新 → await で落庫(supabase-js は await しないとリクエストが送られない)
+  // 失敗時は楽観更新を巻き戻してトースト表示
   const toggleLike = useCallback(
-    (postId: number) => {
+    async (postId: number) => {
       const liked = likedIds.has(postId);
-      setLikedIds((prev) => {
-        const next = new Set(prev);
-        if (liked) next.delete(postId);
-        else next.add(postId);
-        return next;
-      });
-      setPosts((prev) =>
-        prev.map((p) =>
-          p.id === postId
-            ? { ...p, likes: String(Math.max(0, Number(p.likes) + (liked ? -1 : 1))) }
-            : p
-        )
-      );
+      const apply = (state: boolean) => {
+        setLikedIds((prev) => {
+          const next = new Set(prev);
+          if (state) next.add(postId);
+          else next.delete(postId);
+          return next;
+        });
+        setPosts((prev) =>
+          prev.map((p) =>
+            p.id === postId
+              ? { ...p, likes: String(Math.max(0, Number(p.likes) + (state ? 1 : -1))) }
+              : p
+          )
+        );
+      };
+      apply(!liked);
       if (supabase && session) {
-        supabase.rpc("toggle_like", { p_post_id: postId });
+        const { error } = await supabase.rpc("toggle_like", { p_post_id: postId });
+        if (error) {
+          console.error("toggle_like failed:", error.message);
+          apply(liked);
+          toast("いいねに失敗しました");
+        }
       }
     },
     [likedIds, session]
   );
+
+  // 保存/解除(楽観更新 → await で落庫;失敗時は巻き戻し)
+  const toggleSave = useCallback(
+    async (postId: number) => {
+      const saved = savedIds.has(postId);
+      const apply = (state: boolean) => {
+        setSavedIds((prev) => {
+          const next = new Set(prev);
+          if (state) next.add(postId);
+          else next.delete(postId);
+          return next;
+        });
+      };
+      apply(!saved);
+      if (supabase && session) {
+        const { error } = saved
+          ? await supabase
+              .from("saves")
+              .delete()
+              .eq("post_id", postId)
+              .eq("user_id", session.user.id)
+          : await supabase
+              .from("saves")
+              .insert({ post_id: postId, user_id: session.user.id });
+        if (error) {
+          console.error("save failed:", error.message);
+          apply(saved);
+          toast("保存に失敗しました");
+        }
+      }
+    },
+    [savedIds, session]
+  );
+
+  // フォロー/解除(楽観更新 → await で落庫;失敗時は巻き戻し)
+  const toggleFollow = useCallback(
+    async (targetUserId: string) => {
+      const following = followingIds.has(targetUserId);
+      const apply = (state: boolean) => {
+        setFollowingIds((prev) => {
+          const next = new Set(prev);
+          if (state) next.add(targetUserId);
+          else next.delete(targetUserId);
+          return next;
+        });
+      };
+      apply(!following);
+      if (supabase && session) {
+        const { error } = following
+          ? await supabase
+              .from("follows")
+              .delete()
+              .eq("follower_id", session.user.id)
+              .eq("followee_id", targetUserId)
+          : await supabase
+              .from("follows")
+              .insert({ follower_id: session.user.id, followee_id: targetUserId });
+        if (error) {
+          console.error("follow failed:", error.message);
+          apply(following);
+          toast("フォローに失敗しました");
+        }
+      }
+    },
+    [followingIds, session]
+  );
+
+  // コメント追加後のカウンタ反映
+  const bumpComments = useCallback((postId: number) => {
+    setPosts((prev) =>
+      prev.map((p) => (p.id === postId ? { ...p, commentsCount: p.commentsCount + 1 } : p))
+    );
+  }, []);
 
   // 投稿直後のローカル追加(重複は id で除去)
   const prependPost = useCallback((post: Post) => {
@@ -227,6 +319,8 @@ export function useFeed(session: Session | null) {
   return {
     posts,
     likedIds,
+    savedIds,
+    followingIds,
     loading,
     loadingMore,
     hasMore,
@@ -235,6 +329,9 @@ export function useFeed(session: Session | null) {
     loadMore,
     refresh,
     toggleLike,
+    toggleSave,
+    toggleFollow,
+    bumpComments,
     prependPost,
   };
 }

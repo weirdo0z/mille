@@ -1,5 +1,6 @@
 export interface Post {
   id: number;
+  userId: string;
   user: string;
   handle: string;
   avatar: string;
@@ -9,12 +10,14 @@ export interface Post {
   sticker: string;
   stickerEmoji: string;
   likes: string;
+  commentsCount: number;
   tone: "lavender" | "coral";
 }
 
 export const posts: Post[] = [
   {
     id: 1,
+    userId: "u1",
     user: "あおい",
     handle: "@ao__days",
     avatar: "https://i.pravatar.cc/100?img=47",
@@ -25,10 +28,12 @@ export const posts: Post[] = [
     sticker: "放課後クリームソーダ",
     stickerEmoji: "☕",
     likes: "248",
+    commentsCount: 12,
     tone: "lavender",
   },
   {
     id: 2,
+    userId: "u2",
     user: "れん",
     handle: "@ren_1000",
     avatar: "https://i.pravatar.cc/100?img=12",
@@ -39,22 +44,9 @@ export const posts: Post[] = [
     sticker: "2026 夏祭り",
     stickerEmoji: "☼",
     likes: "391",
+    commentsCount: 8,
     tone: "coral",
   },
-];
-
-export interface Story {
-  name: string;
-  image?: string;
-  active?: boolean;
-}
-
-export const stories: Story[] = [
-  { name: "あなた" },
-  { name: "あおい", active: true, image: "https://i.pravatar.cc/100?img=47" },
-  { name: "みく", active: true, image: "https://i.pravatar.cc/100?img=32" },
-  { name: "れん", active: true, image: "https://i.pravatar.cc/100?img=12" },
-  { name: "ゆうた", active: true, image: "https://i.pravatar.cc/100?img=68" },
 ];
 
 export interface Sticker {

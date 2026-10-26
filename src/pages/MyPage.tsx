@@ -1,6 +1,6 @@
-import { Bell, ChevronRight, Flame, LogOut, UserRound } from "../icons";
+import { Bell, ChevronRight, Flame, LogOut, Star, UserRound } from "../icons";
 import { toast } from "../lib/toast";
-import { composeImages } from "../data";
+import { composeImages, stickers as demoStickers, type StickerView } from "../data";
 import { schoolDayCount, type DbProfile } from "../lib/db";
 
 const demoMyPosts: {
@@ -16,19 +16,27 @@ const demoMyPosts: {
 ];
 
 export function MyPage({
-  onOpenCollection,
   profile,
   onLogout,
   postCount,
   myPosts,
   onOpenEdit,
+  followersCount,
+  followingCount,
+  stickerViews,
+  collectedCount,
+  totalCount,
 }: {
-  onOpenCollection: () => void;
   profile: DbProfile | null;
   onLogout: () => void;
   postCount: number | null;
   myPosts: { image: string; caption: string; stickerName?: string; stickerEmoji?: string }[] | null;
   onOpenEdit: () => void;
+  followersCount: number | null;
+  followingCount: number | null;
+  stickerViews: StickerView[] | null;
+  collectedCount: number | null;
+  totalCount: number | null;
 }) {
   const displayName = profile?.display_name || profile?.username || "mio / みお";
   const handle = profile ? `@${profile.username}` : "@mio_days";
@@ -38,10 +46,15 @@ export function MyPage({
     ? [day ? `高校生活 ${day}日目` : null, profile.prefecture || "東京"].filter(Boolean).join(" · ")
     : "高校生活 753日目 · 東京";
   const posts = postCount ?? 24;
-  // 关注/粉丝到 P2 才有真实数据;demo 模式保留旧展示
-  const followers = postCount !== null ? "—" : "318";
-  const following = postCount !== null ? "—" : "96";
+  // 実数が取れていない場合は「—」、demo モードは旧展示のまま
+  const followers = followersCount ?? (postCount !== null ? "—" : "318");
+  const following = followingCount ?? (postCount !== null ? "—" : "96");
   const grid = myPosts ?? demoMyPosts;
+  // 図鑑:demo モードは全収集済み + 旧版 12/40 展示
+  const list: StickerView[] = stickerViews ?? demoStickers.map((s) => ({ ...s, collected: true }));
+  const collected = collectedCount ?? 12;
+  const total = totalCount ?? 40;
+  const pct = total > 0 ? Math.round((collected / total) * 100) : 0;
 
   return (
     <section class="px-5 pb-28 pt-6">
@@ -77,6 +90,38 @@ export function MyPage({
           <p class="text-[10px] font-bold text-[#8d8498]">フォロー中</p>
         </div>
       </div>
+      <div class="mt-6 rounded-[26px] bg-[#5c4a7d] p-5 text-white">
+        <div class="flex items-center justify-between">
+          <div>
+            <p class="text-[11px] tracking-widest text-[#d9c9f4]">MY STICKER BOOK</p>
+            <p class="mt-1 font-display text-3xl font-bold">
+              {collected} <span class="text-sm font-normal text-[#d9c9f4]">/ {total} stickers</span>
+            </p>
+          </div>
+          <Star class="fill-[#ffc67b] text-[#ffc67b]" />
+        </div>
+        <div class="mt-4 h-2 rounded-full bg-white/20">
+          <div class="h-full rounded-full bg-[#ffc67b]" style={{ width: `${pct}%` }} />
+        </div>
+      </div>
+      <div class="mt-7">
+        <h2 class="font-display text-xl font-bold">思い出の図鑑</h2>
+      </div>
+      <div class="mt-4 grid grid-cols-3 gap-3">
+        {list.map((sticker) => (
+          <div
+            key={sticker.label}
+            class="flex aspect-square flex-col items-center justify-center rounded-2xl text-center shadow-sm"
+            style={{ backgroundColor: sticker.collected ? sticker.color : "#ece7f2" }}
+          >
+            <span class={`text-3xl ${sticker.collected ? "" : "opacity-30 grayscale"}`}>
+              {sticker.emoji}
+            </span>
+            <span class="mt-2 text-[11px] font-bold text-[#51465d]">{sticker.label}</span>
+            <span class="text-[9px] text-[#776b7f]">{sticker.collected ? sticker.sub : "未獲得"}</span>
+          </div>
+        ))}
+      </div>
       <div class="mt-6 rounded-[26px] bg-[#ffe9df] p-5">
         <div class="flex items-center justify-between">
           <div>
@@ -91,11 +136,8 @@ export function MyPage({
           <div class="h-full w-[47%] rounded-full bg-[#f38178]" />
         </div>
       </div>
-      <div class="mt-7 flex items-center justify-between">
+      <div class="mt-7">
         <h2 class="font-display text-xl font-bold">わたしの投稿</h2>
-        <button onClick={onOpenCollection} class="text-xs font-bold text-[#9a83c7]">
-          図鑑を見る
-        </button>
       </div>
       <div class="mt-4 grid grid-cols-2 gap-3">
         {grid.length === 0 ? (

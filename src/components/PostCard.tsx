@@ -1,4 +1,3 @@
-import { useState } from "preact/hooks";
 import { Bookmark, Heart, MapPin, MessageCircle } from "../icons";
 import { toast } from "../lib/toast";
 import type { Post } from "../data";
@@ -6,13 +5,24 @@ import type { Post } from "../data";
 export function PostCard({
   post,
   liked,
+  saved,
+  following,
+  isOwn,
   onToggleLike,
+  onToggleSave,
+  onToggleFollow,
+  onOpenComments,
 }: {
   post: Post;
   liked: boolean;
+  saved: boolean;
+  following: boolean;
+  isOwn: boolean;
   onToggleLike: () => void;
+  onToggleSave: () => void;
+  onToggleFollow: () => void;
+  onOpenComments: () => void;
 }) {
-  const [saved, setSaved] = useState(false);
   return (
     <article class="overflow-hidden rounded-[28px] bg-white shadow-[0_12px_35px_rgba(64,42,99,0.08)]">
       <div class="flex items-center justify-between px-4 py-3.5">
@@ -23,13 +33,27 @@ export function PostCard({
             <p class="text-[10px] text-[#9991a9]">{post.handle}</p>
           </div>
         </div>
-        <button
-          aria-label="投稿メニュー"
-          onClick={() => toast("投稿メニューは準備中です")}
-          class="text-xl leading-none text-[#b3aabf]"
-        >
-          •••
-        </button>
+        <div class="flex items-center gap-2">
+          {!isOwn && (
+            <button
+              onClick={onToggleFollow}
+              class={
+                following
+                  ? "rounded-full bg-[#f1ebf7] px-3 py-1 text-[10px] font-bold text-[#6d647d]"
+                  : "rounded-full bg-[#f38178] px-3 py-1 text-[10px] font-bold text-white shadow-sm shadow-[#f38178]/30"
+              }
+            >
+              {following ? "フォロー中" : "フォロー"}
+            </button>
+          )}
+          <button
+            aria-label="投稿メニュー"
+            onClick={() => toast("投稿メニューは準備中です")}
+            class="text-xl leading-none text-[#b3aabf]"
+          >
+            •••
+          </button>
+        </div>
       </div>
       <div class="relative aspect-[1.1] overflow-hidden">
         <img src={post.image} alt={post.caption} class="size-full object-cover" />
@@ -55,22 +79,25 @@ export function PostCard({
           >
             <Heart class={liked ? "fill-current" : ""} />
           </button>
-          <button
-            aria-label="コメント"
-            onClick={() => toast("コメントは準備中です")}
-            class="text-[#6d647d]"
-          >
+          <button aria-label="コメント" onClick={onOpenComments} class="text-[#6d647d]">
             <MessageCircle />
           </button>
           <button
-            onClick={() => setSaved(!saved)}
+            onClick={onToggleSave}
             aria-label="保存"
             class={`ml-auto ${saved ? "text-[#6a4d92]" : "text-[#6d647d]"}`}
           >
             <Bookmark class={saved ? "fill-current" : ""} />
           </button>
         </div>
-        <p class="text-[12px] font-bold text-[#3b334c]">{post.likes} いいね</p>
+        <p class="text-[12px] font-bold text-[#3b334c]">
+          {post.likes} いいね
+          {post.commentsCount > 0 && (
+            <button onClick={onOpenComments} class="ml-3 text-[#9a83c7]">
+              {post.commentsCount} コメント
+            </button>
+          )}
+        </p>
         <p class="mt-1 text-[13px] leading-relaxed text-[#62596f]">{post.caption}</p>
       </div>
     </article>

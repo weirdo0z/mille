@@ -1,4 +1,5 @@
 import type { Post } from "../data";
+import { supabase } from "./supabase";
 
 export interface DbProfile {
   id: string;
@@ -47,6 +48,21 @@ export interface ProfileLite {
   avatar_url: string | null;
 }
 
+// user_id 一覧 → プロフィールマップ(client-side join 用の共有ヘルパー)
+export async function fetchProfilesMap(ids: string[]): Promise<Map<string, ProfileLite>> {
+  const map = new Map<string, ProfileLite>();
+  const uniq = [...new Set(ids)];
+  if (uniq.length === 0) return map;
+  if (!supabase) return map;
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("id, username, display_name, avatar_url")
+    .in("id", uniq);
+  if (error) console.error("profiles query failed:", error.message);
+  for (const p of (data ?? []) as ProfileLite[]) map.set(p.id, p);
+  return map;
+}
+
 // posts 表の行(embed なし。プロフィールは別クエリで取得して mapPost に渡す)
 // 理由:PostgREST の関係 embed は schema cache の状態によって失敗することがあるため、
 // クライアント側 join のほうが確実
@@ -60,6 +76,7 @@ export interface PostRow {
   sticker_emoji?: string | null;
   tone: string;
   likes_count: number;
+  comments_count?: number | null;
   created_at?: string | null;
 }
 
@@ -67,6 +84,7 @@ export function mapPost(row: PostRow, profiles: Map<string, ProfileLite>): Post 
   const p = profiles.get(row.user_id);
   return {
     id: row.id,
+    userId: row.user_id,
     user: p?.display_name || p?.username || "unknown",
     handle: p ? `@${p.username}` : "",
     avatar: p?.avatar_url || "https://i.pravatar.cc/100?img=5",
@@ -76,6 +94,7 @@ export function mapPost(row: PostRow, profiles: Map<string, ProfileLite>): Post 
     sticker: row.sticker_name || "はじめての投稿",
     stickerEmoji: row.sticker_emoji || "✦",
     likes: String(row.likes_count ?? 0),
+    commentsCount: row.comments_count ?? 0,
     tone: row.tone === "coral" ? "coral" : "lavender",
   };
 }

@@ -1,14 +1,19 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import { ChevronRight, RefreshCw } from "../icons";
-import { stories, type Post } from "../data";
+import type { Post } from "../data";
 import { PostCard } from "../components/PostCard";
-import { Story } from "../components/StoryRow";
 
 export function HomePage({
   posts,
   onExplore,
   likedIds,
+  savedIds,
+  followingIds,
+  currentUserId,
   onToggleLike,
+  onToggleSave,
+  onToggleFollow,
+  onOpenComments,
   loading,
   loadingMore,
   hasMore,
@@ -20,7 +25,13 @@ export function HomePage({
   posts: Post[];
   onExplore: () => void;
   likedIds: Set<number>;
+  savedIds: Set<number>;
+  followingIds: Set<string>;
+  currentUserId: string | null;
   onToggleLike: (postId: number) => void;
+  onToggleSave: (postId: number) => void;
+  onToggleFollow: (userId: string) => void;
+  onOpenComments: (post: Post) => void;
   loading: boolean;
   loadingMore: boolean;
   hasMore: boolean;
@@ -71,12 +82,7 @@ export function HomePage({
       >
         {refreshing ? "更新中..." : pull > 60 ? "指を離して更新" : ""}
       </div>
-      <section class="flex gap-4 overflow-x-auto px-5 py-5 [scrollbar-width:none]">
-        {stories.map((story) => (
-          <Story key={story.name} {...story} />
-        ))}
-      </section>
-      <section class="px-5 pb-5">
+      <section class="px-5 pb-5 pt-5">
         <div class="relative overflow-hidden rounded-[26px] bg-[#e8e0f7] p-5">
           <div class="relative z-10 max-w-[230px]">
             <p class="mb-1 text-[11px] font-bold tracking-[0.18em] text-[#8b70bb]">
@@ -138,7 +144,13 @@ export function HomePage({
               key={post.id}
               post={post}
               liked={likedIds.has(post.id)}
+              saved={savedIds.has(post.id)}
+              following={followingIds.has(post.userId)}
+              isOwn={currentUserId !== null && currentUserId === post.userId}
               onToggleLike={() => onToggleLike(post.id)}
+              onToggleSave={() => onToggleSave(post.id)}
+              onToggleFollow={() => onToggleFollow(post.userId)}
+              onOpenComments={() => onOpenComments(post)}
             />
           ))
         )}

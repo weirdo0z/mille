@@ -1,6 +1,7 @@
-import { Camera, Compass, Flame, Star, UserRound } from "../icons";
+import { Camera, Flame, UserRound } from "../icons";
 
-export type Page = "home" | "discover" | "profile" | "mypage";
+// discover はタブとしては表示しないが、ヘッダーの検索から遷移できるよう型には残す
+export type Page = "home" | "discover" | "mypage";
 
 function Tab({
   page,
@@ -40,7 +41,6 @@ export function BottomNav({
   return (
     <nav class="fixed bottom-0 z-30 flex w-full max-w-[430px] items-center justify-around border-t border-[#eee5f0] bg-[#fffaf7]/95 px-5 py-3.5 backdrop-blur-md">
       <Tab page="home" active={active} onChange={onChange} icon={Flame} label="フィード" />
-      <Tab page="discover" active={active} onChange={onChange} icon={Compass} label="さがす" />
       <button
         aria-label="投稿する"
         onClick={onCompose}
@@ -48,7 +48,6 @@ export function BottomNav({
       >
         <Camera />
       </button>
-      <Tab page="profile" active={active} onChange={onChange} icon={Star} label="図鑑" />
       <Tab page="mypage" active={active} onChange={onChange} icon={UserRound} label="マイページ" />
     </nav>
   );
